@@ -10,15 +10,16 @@ console.log(`Puerto: ${config.port}`);
 console.log(`${config.logMessage}`);
 console.log('==========================================');
 
-const server = app.listen(config.port, () => {
-  console.log(`[${config.appName}] escuchando en http://localhost:${config.port}`);
+const server = app.listen(config.port, '0.0.0.0', () => {
+  console.log(
+    `[${config.appName}] escuchando en http://0.0.0.0:${config.port}`
+  );
 });
 
 server.on('error', (error) => {
   console.error('Error al iniciar el servidor:', error.message);
   process.exit(1);
 });
-
 
 process.on('SIGTERM', () => {
   console.log('SIGTERM recibido, cerrando servidor...');
