@@ -1,0 +1,127 @@
+name: CI - Customers App (Node)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ------------------------------------------------------------------
+  # Job 1: instala, testea y arma la app para cada ambiente (dev/qa/prod)
+  # cada uno contra su propia base de datos Postgres de servicio.
+  # ------------------------------------------------------------------
+  test:
+    name: Test (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: dev
+            port: 8080
+            db_name: customers_dev
+          - environment: qa
+            port: 8090
+            db_name: customers_qa
+          - environment: prod
+            port: 9090
+            db_name: customers_prod
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: customers_app
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: ${{ matrix.db_name }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U customers_app -d ${{ matrix.db_name }}"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      APP_ENV: ${{ matrix.environment }}
+      PORT: ${{ matrix.port }}
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: customers_app
+      DB_PASSWORD: ci_password
+      DB_NAME: ${{ matrix.db_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply DB migrations (${{ matrix.environment }})
+        run: npm run migrate
+
+      - name: Seed fictitious data (dev/qa only)
+        if: matrix.environment != 'prod'
+        run: npm run seed
+
+      - name: Run tests (${{ matrix.environment }})
+        run: npm test
+
+      - name: Build executable bundle
+        run: npm run build
+
+      - name: Smoke test built bundle (${{ matrix.environment }})
+        run: |
+          node dist/app.cjs &
+          APP_PID=$!
+          for i in $(seq 1 10); do
+            sleep 1
+            if curl -sf "http://localhost:${{ matrix.port }}/health"; then
+              break
+            fi
+          done
+          echo "--- /health ---"
+          curl -sf "http://localhost:${{ matrix.port }}/health"
+          echo
+          echo "--- crear cliente ---"
+          curl -sf -X POST "http://localhost:${{ matrix.port }}/api/customers" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"CI Smoke Test\",\"email\":\"ci-${{ matrix.environment }}-${{ github.run_id }}@email.com\"}"
+          echo
+          echo "--- listar clientes ---"
+          curl -sf "http://localhost:${{ matrix.port }}/api/customers"
+          echo
+          kill $APP_PID
+
+  # ------------------------------------------------------------------
+  # Job 2: valida que la imagen Docker compile y que los 3
+  # docker-compose (dev/qa/prod) tengan sintaxis válida.
+  # ------------------------------------------------------------------
+  docker-build:
+    name: Docker build & compose check (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, qa, prod]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (${{ matrix.environment }})
+        run: docker build -f docker/Dockerfile -t customers-app:${{ matrix.environment }} .
+
+      - name: Validate docker-compose (${{ matrix.environment }})
+        run: docker compose -f docker/${{ matrix.environment }}/docker-compose.yml config

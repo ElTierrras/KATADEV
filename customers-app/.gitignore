@@ -1,0 +1,25 @@
+# Dependencias
+node_modules/
+
+# Build
+dist/
+
+# Variables de entorno reales / locales (si alguna vez se crean)
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+*.log
+
+# SO / editores
+.DS_Store
+.vscode/
+.idea/
+
+# Datos de Postgres en Docker (volúmenes se gestionan por Docker, no por git)
+postgres-data/
+
+# Coverage de tests
+coverage/

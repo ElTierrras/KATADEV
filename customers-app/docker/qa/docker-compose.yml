@@ -1,0 +1,60 @@
+# ============================================================
+# Ambiente: QA
+# Levanta Postgres (con su propia base de datos y volumen) y el
+# backend en modo qa (puerto 8090).
+# Uso:
+#   docker compose -f docker/qa/docker-compose.yml up --build
+# ============================================================
+services:
+  postgres-qa:
+    image: postgres:16
+    container_name: postgres_customers_qa
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: customers_app
+      POSTGRES_PASSWORD: qa_pass_example
+      POSTGRES_DB: customers_qa
+    ports:
+      - "5443:5432"
+    volumes:
+      - postgres_data_qa:/var/lib/postgresql/data
+      - ../../src/db/migrations/001_init_customers.sql:/docker-entrypoint-initdb.d/001_init_customers.sql
+      - ../../src/db/seeds/002_seed_qa.sql:/docker-entrypoint-initdb.d/002_seed_qa.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customers_app -d customers_qa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - customers-net-qa
+
+  backend-qa:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    container_name: backend_customers_qa
+    restart: unless-stopped
+    environment:
+      APP_ENV: qa
+      APP_NAME: customers-qa
+      PORT: 8090
+      LOG_MESSAGE: "Ejecutando en QA"
+      DB_HOST: postgres-qa
+      DB_PORT: 5432
+      DB_NAME: customers_qa
+      DB_USER: customers_app
+      DB_PASSWORD: qa_pass_example
+      DB_SSL: "false"
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres-qa:
+        condition: service_healthy
+    networks:
+      - customers-net-qa
+
+volumes:
+  postgres_data_qa:
+
+networks:
+  customers-net-qa:

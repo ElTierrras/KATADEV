@@ -1,0 +1,58 @@
+# ============================================================
+# Ambiente: DEV
+# Levanta Postgres (con su propia base de datos y volumen) y el
+# backend en modo dev (puerto 8080)
+# ============================================================
+services:
+  postgres-dev:
+    image: postgres:16
+    container_name: postgres_customers_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: customers_app
+      POSTGRES_PASSWORD: dev_pass_example
+      POSTGRES_DB: customers_dev
+    ports:
+      - "5442:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ../../src/db/migrations/001_init_customers.sql:/docker-entrypoint-initdb.d/001_init_customers.sql
+      - ../../src/db/seeds/002_seed_dev.sql:/docker-entrypoint-initdb.d/002_seed_dev.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customers_app -d customers_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - customers-net-dev
+
+  backend-dev:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    container_name: backend_customers_dev
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      APP_NAME: customers-dev
+      PORT: 8080
+      LOG_MESSAGE: "Ejecutando en DEV"
+      DB_HOST: postgres-dev
+      DB_PORT: 5432
+      DB_NAME: customers_dev
+      DB_USER: customers_app
+      DB_PASSWORD: dev_pass_example
+      DB_SSL: "false"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+    networks:
+      - customers-net-dev
+
+volumes:
+  postgres_data_dev:
+
+networks:
+  customers-net-dev:
